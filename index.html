@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="訓練記錄">
+<meta name="theme-color" content="#111214">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>訓練記錄</title>
+<style>
+:root{
+  --bg:#111214; --panel:#1b1d21; --panel2:#24272c; --line:#2f333a;
+  --text:#f2f3f5; --dim:#9aa1ab; --faint:#6b717b;
+  --accent:#c6f432; --accent-ink:#151a05; --warn:#ffb547; --bad:#ff6b6b; --good:#5ee0a0;
+  --r:14px;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font:16px/1.4 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC",sans-serif;
+  -webkit-user-select:none;user-select:none;overscroll-behavior:none}
+input,textarea{-webkit-user-select:text;user-select:text}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
+.app{max-width:560px;margin:0 auto;min-height:100vh;padding:calc(var(--safe-t) + 8px) 16px calc(var(--safe-b) + 24px)}
+.top{display:flex;align-items:center;gap:8px;min-height:44px;margin-bottom:8px}
+.top h1{font-size:20px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconbtn{min-width:44px;height:44px;border-radius:12px;background:var(--panel);font-size:20px;display:grid;place-items:center;padding:0 10px}
+.sync{font-size:13px;color:var(--dim);padding:6px 10px;border-radius:999px;background:var(--panel)}
+.sync.pending{color:var(--warn)} .sync.err{color:var(--bad)}
+.card{background:var(--panel);border-radius:var(--r);padding:14px;margin-bottom:10px}
+.muted{color:var(--dim)} .faint{color:var(--faint)} .small{font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.daybtn{background:var(--panel);border-radius:var(--r);padding:18px 14px;text-align:left;min-height:84px}
+.daybtn b{display:block;font-size:20px}
+.daybtn.next{outline:2px solid var(--accent)}
+.daybtn .small{margin-top:4px}
+.ex{display:flex;gap:12px;align-items:center;width:100%;text-align:left}
+.ex .body{flex:1;min-width:0}
+.ex .name{font-weight:600;font-size:17px}
+.ex .last{font-size:14px;color:var(--dim);margin-top:2px}
+.ex .sug{font-size:13px;color:var(--accent);margin-top:2px}
+.badge{min-width:42px;height:42px;border-radius:21px;background:var(--panel2);display:grid;place-items:center;font-weight:700;font-size:14px}
+.badge.done{background:var(--accent);color:var(--accent-ink)}
+.sets{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.sets td{padding:5px 4px;border-top:1px solid var(--line);font-size:15px}
+.sets tr:first-child td{border-top:0}
+.sets .t{color:var(--faint);font-size:13px;width:3.2em}
+.sets .pend td{color:var(--warn)}
+.sets tr.tap{cursor:pointer}
+.label{font-size:13px;color:var(--dim);margin:12px 0 6px}
+.seg{display:flex;gap:6px}
+.seg button{flex:1;height:48px;border-radius:12px;background:var(--panel2);font-weight:600}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.stepper{display:flex;align-items:stretch;gap:8px}
+.stepper button{width:64px;height:60px;border-radius:12px;background:var(--panel2);font-size:22px;font-weight:700}
+.stepper input{flex:1;min-width:0;height:60px;border-radius:12px;border:0;background:var(--bg);color:var(--text);
+  text-align:center;font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+.field{display:flex;gap:8px}
+.field input,.textin{flex:1;min-width:0;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:17px}
+.big{display:block;width:100%;height:64px;border-radius:16px;background:var(--accent);color:var(--accent-ink);font-size:20px;font-weight:800;margin-top:14px}
+.big:active{transform:scale(.99)}
+.ghost{display:block;width:100%;height:48px;border-radius:12px;background:var(--panel2);margin-top:8px;font-weight:600}
+.danger{color:var(--bad)}
+.row{display:flex;gap:8px;align-items:center}
+.rest{position:sticky;bottom:calc(var(--safe-b) + 8px);margin-top:12px;background:var(--panel2);border-radius:16px;padding:10px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px #0008}
+.rest .time{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums;flex:1}
+.rest.over .time{color:var(--accent)}
+.rest button{height:40px;padding:0 12px;border-radius:10px;background:var(--panel)}
+.toast{white-space:nowrap;position:fixed;left:50%;bottom:calc(var(--safe-b) + 90px);transform:translateX(-50%);background:#000d;color:#fff;padding:10px 16px;border-radius:12px;font-size:15px;z-index:9;display:flex;gap:12px;align-items:center;max-width:92vw}
+.toast button{color:var(--accent);font-weight:700}
+.sheet{position:fixed;inset:0;background:#000a;z-index:8;display:flex;align-items:flex-end}
+.sheet .inner{background:var(--panel);width:100%;max-height:80vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 16px calc(var(--safe-b) + 16px)}
+.list button{display:block;width:100%;text-align:left;padding:14px 4px;border-bottom:1px solid var(--line);font-size:17px}
+.list .small{display:inline;margin-left:6px}
+.edithead{display:flex;justify-content:space-between;align-items:center;background:#3a2f12;color:var(--warn);border-radius:10px;padding:8px 12px;margin-top:10px;font-size:14px}
+.hidden{display:none!important}
+.prev2{margin-top:8px}
+details summary{color:var(--dim);font-size:13px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script>
+'use strict';
+/* ─────────── 儲存 ─────────── */
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v===null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+};
+const cfg = LS.get('cfg', {url:'', token:''});
+let queue = LS.get('queue', []);           // 待送的操作
+let cache = LS.get('cache', {});           // 每個訓練日的 bootstrap 結果
+let meta = LS.get('meta', null);           // 動作清單、訓練日等
+let restSec = LS.get('restSec', 120);
+
+/* ─────────── 工具 ─────────── */
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => (n===undefined||n===null||n==='') ? '' : String(Math.round(Number(n)*100)/100);
+const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-'+Date.now()+'-'+Math.random().toString(16).slice(2));
+const isCardio = t => String(t||'').startsWith('有氧');
+const shortDate = d => d ? d.slice(5).replace('-','/') : '';
+
+function setText(s){
+  if (isCardio(s._type)) return cardioText(s);
+  if (s._type==='計時型') return fmt(s.timedSec)+' 秒';
+  const kg = (s._type==='自重型') ? (s.kg ? '+'+fmt(s.kg) : '自重') : fmt(s.kg);
+  return kg + '×' + fmt(s.reps) + (s.rir!==undefined && s.rir!=='' ? ' @'+fmt(s.rir) : '');
+}
+function cardioText(s){
+  if (s.z2min!==undefined) return [fmt(s.z2min)+' 分', s.z2km!==undefined?fmt(s.z2km)+' km':'', s.z2inc!==undefined?fmt(s.z2inc)+'%':''].filter(Boolean).join(' · ');
+  if (s.sprSec!==undefined||s.jogSec!==undefined) return (s.rounds||1)+' 回 · 衝 '+fmt(s.sprSec)+'s/'+fmt(s.sprM)+'m · 慢 '+fmt(s.jogSec)+'s/'+fmt(s.jogM)+'m';
+  return '';
+}
+function summary(sets, type){
+  if (!sets || !sets.length) return '';
+  const w = sets.filter(s => s.setType !== '熱身');
+  return (w.length ? w : sets).map(s => setText({...s, _type:type})).join('、');
+}
+
+/* ─────────── 網路 ─────────── */
+async function apiGet(params){
+  const u = new URL(cfg.url);
+  Object.entries({...params, token: cfg.token}).forEach(([k,v]) => v!==undefined && u.searchParams.set(k, v));
+  const res = await fetch(u.toString(), {method:'GET', redirect:'follow', cache:'no-store'});
+  const j = await res.json();
+  if (!j.ok) throw Object.assign(new Error(j.message || j.error), {code:j.error});
+  return j;
+}
+async function apiPost(body){
+  const res = await fetch(cfg.url, {method:'POST', redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...body, token: cfg.token})});
+  const j = await res.json();
+  if (!j.ok) throw Object.assign(new Error(j.message || j.error), {code:j.error});
+  return j;
+}
+
+/* ─────────── 待送佇列：先存手機、成功才移除；set_id 讓重送不會重複寫入 ─────────── */
+let flushing = false, syncErr = '', retryTimer = null;
+function enqueue(op){ queue.push(op); LS.set('queue', queue); renderSync(); flush(); }
+async function flush(){
+  if (flushing || !queue.length || !cfg.url) return;
+  flushing = true; clearTimeout(retryTimer);
+  try{
+    while (queue.length){
+      const op = queue[0];
+      try{
+        await apiPost(op);
+        queue.shift(); LS.set('queue', queue); syncErr='';
+        markSynced(op);
+      }catch(e){
+        // 權杖或資料錯誤重送也沒用，丟掉並提示；其他（網路、忙碌）稍後重試
+        if (['unauthorized','bad_json','bad_rir','bad_date','missing_ex','missing_set_id','bad_kg'].includes(e.code)){
+          queue.shift(); LS.set('queue', queue); syncErr = '有一筆被拒絕：'+e.message; toast(syncErr);
+        } else if (e.code==='not_found' && op.action==='update'){
+          queue.shift(); LS.set('queue', queue);
+        } else { syncErr = '同步失敗，稍後自動重試'; retryTimer = setTimeout(flush, 8000); break; }
+      }
+      renderSync();
+    }
+  } finally { flushing = false; renderSync(); }
+}
+function markSynced(op){
+  if (op.action!=='set') return;
+  for (const d of Object.values(cache)) for (const it of (d.items||[])) for (const s of it.todaySets) if (s.setId===op.set_id) s.pending=false;
+  LS.set('cache', cache);
+  if (view.name==='ex') renderEx();
+}
+window.addEventListener('online', flush);
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ flush(); keepAwake(); } });
+
+/* ─────────── 螢幕常亮 ─────────── */
+let wake = null;
+async function keepAwake(){
+  if (!('wakeLock' in navigator) || document.hidden || view.name==='home' || view.name==='setup') return;
+  try{ if (!wake || wake.released) wake = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+
+/* ─────────── 休息計時（結束時嗶一聲） ─────────── */
+let audio = null, restEnd = LS.get('restEnd', 0), restTick = null, beeped = true;
+function unlockAudio(){ try{ if(!audio){ audio = new (window.AudioContext||window.webkitAudioContext)(); } if (audio.state==='suspended') audio.resume(); }catch(e){} }
+function beep(){
+  if (!audio) return;
+  [0, .25, .5].forEach(t => { const o=audio.createOscillator(), g=audio.createGain(); o.frequency.value=880; o.connect(g); g.connect(audio.destination);
+    g.gain.setValueAtTime(.0001, audio.currentTime+t); g.gain.exponentialRampToValueAtTime(.4, audio.currentTime+t+.02);
+    g.gain.exponentialRampToValueAtTime(.0001, audio.currentTime+t+.18); o.start(audio.currentTime+t); o.stop(audio.currentTime+t+.2); });
+}
+function startRest(){ restEnd = Date.now() + restSec*1000; beeped=false; LS.set('restEnd', restEnd); tickRest(); }
+function tickRest(){
+  clearInterval(restTick);
+  const el = $('#rest'); if (!el) return;
+  const upd = () => {
+    const left = Math.round((restEnd - Date.now())/1000);
+    if (restEnd===0 || left < -600){ el.classList.add('hidden'); clearInterval(restTick); return; }
+    el.classList.remove('hidden');
+    const a = Math.abs(left);
+    $('.time', el).textContent = (left<0?'+':'') + Math.floor(a/60) + ':' + String(a%60).padStart(2,'0');
+    el.classList.toggle('over', left<=0);
+    if (left<=0 && !beeped){ beeped=true; beep(); }
+  };
+  upd(); restTick = setInterval(upd, 500);
+}
+
+/* ─────────── 畫面 ─────────── */
+let view = {name:'home'};
+const app = $('#app');
+function go(v){ view = v; window.scrollTo(0,0); render(); keepAwake(); }
+function render(){
+  if (!cfg.url || !cfg.token) return renderSetup();
+  if (view.name==='home') return renderHome();
+  if (view.name==='day') return renderDay();
+  if (view.name==='ex') return renderEx();
+}
+function renderSync(){
+  const el = $('#sync'); if (!el) return;
+  el.className = 'sync' + (queue.length ? ' pending' : '') + (syncErr && queue.length ? ' err' : '');
+  el.textContent = queue.length ? ('待同步 ' + queue.length) : '已同步';
+}
+function toast(msg, action){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const t = document.createElement('div'); t.className='toast';
+  t.innerHTML = '<span>'+esc(msg)+'</span>' + (action ? '<button>'+esc(action.label)+'</button>' : '');
+  if (action) $('button', t).onclick = () => { t.remove(); action.fn(); };
+  document.body.appendChild(t); setTimeout(()=>t.remove(), action ? 6000 : 3000);
+}
+
+/* 設定 */
+function renderSetup(){
+  app.innerHTML = `
+  <div class="top"><h1>連線設定</h1></div>
+  <div class="card">
+    <p class="muted small">在 Apps Script 執行 <b>showSetupCode</b>，把記錄裡那一整行「網址|權杖」貼到下面。</p>
+    <textarea id="code" class="textin" style="height:120px;padding:10px;font-size:14px" placeholder="https://script.google.com/macros/s/…/exec|權杖"></textarea>
+    <button class="big" id="save">儲存並測試</button>
+    <p id="msg" class="small muted"></p>
+  </div>`;
+  $('#save').onclick = async () => {
+    const raw = $('#code').value.trim();
+    const i = raw.lastIndexOf('|');
+    if (i<0){ $('#msg').textContent='格式應該是「網址|權杖」'; return; }
+    cfg.url = raw.slice(0,i).trim(); cfg.token = raw.slice(i+1).trim();
+    $('#msg').textContent = '測試中…';
+    try{ await apiGet({action:'ping'}); LS.set('cfg', cfg); await loadMeta(); go({name:'home'}); }
+    catch(e){ $('#msg').textContent = '連線失敗：' + e.message; cfg.url=''; cfg.token=''; }
+  };
+}
+async function loadMeta(){
+  const r = await apiGet({action:'bootstrap', date: todayStr()});
+  meta = {days:r.days, exercises:r.exercises, bodyweight:r.bodyweight, lastDayDone:r.lastDayDone, at:Date.now()};
+  LS.set('meta', meta);
+}
+
+/* 首頁：選訓練日 */
+function renderHome(){
+  const days = meta?.days?.length ? meta.days : ['Push A','Push B','Pull A','Pull B','Legs','Core','Cardio'];
+  const done = meta?.lastDayDone || {};
+  // 建議下一個：重訓日中最久沒做的（排除今天已做過的）
+  const strength = days.filter(d => d!=='Cardio' && d!=='Core' && done[d]);
+  const next = strength.sort((a,b) => (done[a]||'').localeCompare(done[b]||''))[0];
+  const bw = meta?.bodyweight;
+  app.innerHTML = `
+  <div class="top"><h1>訓練記錄</h1><span id="sync" class="sync"></span><button class="iconbtn" id="gear" aria-label="設定">⚙︎</button></div>
+  <div class="grid2">${days.map(d => `
+    <button class="daybtn ${d===next?'next':''}" data-day="${esc(d)}"><b>${esc(d)}</b>
+      <div class="small muted">${done[d] ? '上次 '+shortDate(done[d]) : '尚無紀錄'}${d===next?' · 建議':''}</div></button>`).join('')}
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="row"><div style="flex:1"><b>體重</b><div class="small muted">${bw ? '上次 '+shortDate(bw.date)+' · '+fmt(bw.kg)+' kg' : '尚無紀錄'}</div></div></div>
+    <div class="field" style="margin-top:10px"><input id="bw" inputmode="decimal" placeholder="今天體重 kg"><button class="iconbtn" id="bwsave" style="background:var(--accent);color:var(--accent-ink);font-weight:800">記錄</button></div>
+  </div>
+  <p class="small faint">資料直接寫進 Google 試算表；沒網路時先存在手機，恢復後自動補送。</p>`;
+  renderSync();
+  app.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { unlockAudio(); openDay(b.dataset.day); });
+  $('#gear').onclick = () => {
+    if (confirm('要重新設定連線嗎？（待同步的資料會保留）')){ cfg.url=''; cfg.token=''; LS.set('cfg', cfg); render(); }
+  };
+  $('#bwsave').onclick = () => {
+    const kg = parseFloat($('#bw').value);
+    if (!(kg>20 && kg<300)){ toast('體重格式不對'); return; }
+    enqueue({action:'bodyweight', date: todayStr(), kg});
+    meta = {...(meta||{}), bodyweight:{date:todayStr(), kg}}; LS.set('meta', meta);
+    toast('已記錄體重 '+kg+' kg'); renderHome();
+  };
+  if (!meta || Date.now() - (meta.at||0) > 3600e3) loadMeta().then(()=>{ if(view.name==='home') renderHome(); }).catch(()=>{});
+}
+
+/* 訓練日：動作清單 */
+async function openDay(day){
+  go({name:'day', day, loading: !cache[day]});
+  try{
+    const r = await apiGet({action:'bootstrap', day, date: todayStr()});
+    mergeDay(day, r);
+    meta = {days:r.days, exercises:r.exercises, bodyweight:r.bodyweight, lastDayDone:r.lastDayDone, at:Date.now()}; LS.set('meta', meta);
+  }catch(e){
+    if (!cache[day]) toast('讀取失敗：'+e.message+'（沒有快取）'); else toast('離線中，顯示上次載入的資料');
+  }
+  if (view.name==='day' && view.day===day){ view.loading=false; renderDay(); }
+}
+/** 合併伺服器資料，保留還沒同步的本機組 */
+function mergeDay(day, r){
+  const old = cache[day];
+  const pendingIds = new Set(queue.filter(q=>q.action==='set').map(q=>q.set_id));
+  const undone = new Set(queue.filter(q=>q.action==='undo').map(q=>q.set_id));
+  if (old && old.today===r.today){
+    for (const oit of old.items){
+      const local = oit.todaySets.filter(s => pendingIds.has(s.setId));
+      if (!local.length) continue;
+      let it = r.items.find(i=>i.ex===oit.ex);
+      if (!it){ it = {...oit, todaySets:[]}; r.items.push(it); }
+      for (const s of local) if (!it.todaySets.some(x=>x.setId===s.setId)) it.todaySets.push(s);
+    }
+  }
+  for (const it of r.items) it.todaySets = it.todaySets.filter(s => !undone.has(s.setId));
+  cache[day] = {today:r.today, items:r.items, at:Date.now()};
+  // 舊的日子留著也沒用，只保留今天
+  for (const k of Object.keys(cache)) if (cache[k].today !== todayStr()) delete cache[k];
+  LS.set('cache', cache);
+}
+function dayData(){ return cache[view.day]; }
+
+function renderDay(){
+  const d = dayData();
+  app.innerHTML = `
+  <div class="top"><button class="iconbtn" id="back">‹</button><h1>${esc(view.day)}</h1><span id="sync" class="sync"></span></div>
+  <div id="list">${!d ? '<p class="muted">載入中…</p>' : (d.items.length ? d.items.map((it,i) => {
+      const n = it.todaySets.filter(s=>s.setType!=='熱身').length;
+      const target = it.last.filter(s=>s.setType==='正式').length || '';
+      return `<div class="card"><button class="ex" data-i="${i}">
+        <div class="badge ${target && n>=target ? 'done':''}">${n}${target?'/'+target:''}</div>
+        <div class="body"><div class="name">${esc(it.ex)}</div>
+        <div class="last">${it.lastDate ? shortDate(it.lastDate)+'：'+esc(summary(it.last, it.type)) : '第一次做'}</div>
+        ${it.suggestion ? `<div class="sug">→ ${esc(it.suggestion.text)}</div>`:''}</div></button></div>`; }).join('')
+    : '<p class="muted">這個訓練日還沒有紀錄。按下面加入動作。</p>')}
+  </div>
+  <button class="ghost" id="add">＋ 加入其他動作</button>
+  <div id="rest" class="rest hidden"><span class="small muted">休息</span><span class="time">0:00</span><button id="rskip">結束</button></div>`;
+  renderSync(); tickRest();
+  $('#back').onclick = () => go({name:'home'});
+  $('#rskip').onclick = () => { restEnd=0; LS.set('restEnd',0); tickRest(); };
+  app.querySelectorAll('[data-i]').forEach(b => b.onclick = () => go({name:'ex', day:view.day, i:+b.dataset.i}));
+  $('#add').onclick = () => pickExercise(ex => {
+    const d = dayData() || (cache[view.day] = {today:todayStr(), items:[]});
+    let i = d.items.findIndex(x=>x.ex===ex.name);
+    if (i<0){ d.items.push({ex:ex.name, type:ex.type, last:[], prev2:[], todaySets:[], lastDate:null, suggestion:null}); i=d.items.length-1; LS.set('cache', cache); }
+    go({name:'ex', day:view.day, i});
+  });
+}
+function pickExercise(cb){
+  const list = meta?.exercises || [];
+  const sh = document.createElement('div'); sh.className='sheet';
+  sh.innerHTML = `<div class="inner"><div class="row"><b style="flex:1">選擇動作</b><button class="iconbtn" id="x">✕</button></div>
+    <div class="list">${list.map((e,i)=>`<button data-k="${i}">${esc(e.name)}<span class="small faint">${esc(e.type)}</span></button>`).join('') || '<p class="muted">沒有動作清單，請先連線一次。</p>'}</div></div>`;
+  document.body.appendChild(sh);
+  sh.onclick = e => { if (e.target===sh) sh.remove(); };
+  $('#x', sh).onclick = () => sh.remove();
+  sh.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { sh.remove(); cb(list[+b.dataset.k]); });
+}
+
+/* 動作：看上次、記這一組 */
+let form = null;   // 目前輸入中的值
+function item(){ return dayData()?.items?.[view.i]; }
+function nextSetNo(it, type){
+  // 用最大編號 +1，刪掉中間一組也不會撞號（試算表裡的編號不會被改動）
+  const pool = it.todaySets.filter(s => type==='熱身' ? s.setType==='熱身' : s.setType!=='熱身');
+  return pool.reduce((m,s) => Math.max(m, Number(s.setNo)||0), 0) + 1;
+}
+/** 預填：重量沿用今天上一組（沒有就用建議），次數／RIR 對照上次同一組 */
+function prefill(it, setType){
+  const t = it.type;
+  if (isCardio(t) || t==='計時型'){
+    const src = it.todaySets[it.todaySets.length-1] || it.last[0] || {};
+    const f = {setType:'正式'};
+    ['z2min','z2km','z2inc','sprSec','sprM','sprInc','jogSec','jogM','jogInc','rounds','timedSec'].forEach(k => f[k] = src[k]);
+    if (t==='計時型'){ const lastSame = it.last.filter(s=>s.setType!=='熱身')[it.todaySets.length]; f.timedSec = (lastSame?.timedSec ?? f.timedSec ?? 30); if (it.suggestion?.timedSec && !it.todaySets.length) f.timedSec = it.suggestion.timedSec; }
+    return f;
+  }
+  const n = nextSetNo(it, setType);
+  const pool = it.last.filter(s => setType==='熱身' ? s.setType==='熱身' : s.setType===setType);
+  const lastSame = pool[n-1] || pool[pool.length-1];
+  const todayPrev = [...it.todaySets].reverse().find(s => setType==='熱身' ? s.setType==='熱身' : s.setType!=='熱身');
+  const sug = it.suggestion;
+  let kg, reps, rir;
+  if (todayPrev && setType!=='下降組'){ kg = todayPrev.kg; }
+  else if (setType==='正式' && sug && sug.kg!==undefined){ kg = sug.kg; }
+  else kg = lastSame?.kg ?? todayPrev?.kg ?? '';
+  reps = lastSame?.reps ?? todayPrev?.reps ?? 8;
+  if (setType==='正式' && sug && lastSame && Number(kg)===Number(sug.kg)) reps = Math.max(1, Number(lastSame.reps) + (sug.repsDelta||0));
+  rir = lastSame?.rir ?? (setType==='正式' ? 2 : '');
+  if (setType==='下降組') rir = 0;
+  return {setType, kg, reps, rir, note:''};
+}
+function renderEx(){
+  const it = item(); if (!it){ go({name:'day', day:view.day}); return; }
+  const t = it.type;
+  if (!form || form.ex!==it.ex) form = {...prefill(it,'正式'), ex:it.ex, editId:null};
+  const editing = form.editId;
+  const n = editing ? (it.todaySets.find(s=>s.setId===editing)?.setNo) : nextSetNo(it, form.setType);
+  const kgStep = (t==='重量型' && Number(form.kg) < 15) ? 1 : 2.5;
+  const lastRows = rows => rows.map(s => `<tr><td class="t">${s.setType==='正式'? '#'+fmt(s.setNo) : esc(s.setType)}</td><td>${esc(setText({...s,_type:t}))}</td><td class="small faint">${s.e1rm?'e1RM '+fmt(s.e1rm):''}</td></tr>`).join('');
+
+  let inputs = '';
+  if (t==='重量型' || t==='自重型'){
+    inputs = `
+    <div class="label">組類型</div>
+    <div class="seg" id="stype">${['熱身','正式','下降組'].map(x=>`<button data-v="${x}" class="${form.setType===x?'on':''}">${x}</button>`).join('')}</div>
+    <div class="label">${t==='自重型' ? '額外負重 kg（沒有就 0）' : '重量 kg'+(t==='重量型'?'（啞鈴填單邊）':'')}</div>
+    <div class="stepper"><button data-step="kg" data-d="-${kgStep}">−</button><input id="kg" inputmode="decimal" value="${fmt(form.kg)}"><button data-step="kg" data-d="${kgStep}">＋</button></div>
+    <div class="label">次數</div>
+    <div class="stepper"><button data-step="reps" data-d="-1">−</button><input id="reps" inputmode="numeric" value="${fmt(form.reps)}"><button data-step="reps" data-d="1">＋</button></div>
+    <div class="label">RIR（還剩幾下）</div>
+    <div class="seg" id="rir">${[0,1,2,3,4,5].map(x=>`<button data-v="${x}" class="${String(form.rir)===String(x)?'on':''}">${x}</button>`).join('')}</div>`;
+  } else if (t==='計時型'){
+    inputs = `<div class="label">秒數</div>
+    <div class="stepper"><button data-step="timedSec" data-d="-5">−5</button><input id="timedSec" inputmode="numeric" value="${fmt(form.timedSec)}"><button data-step="timedSec" data-d="5">＋5</button></div>`;
+  } else if (t==='有氧-HIIT'){
+    const f = (id,l) => `<div><div class="label">${l}</div><div class="field"><input id="${id}" inputmode="decimal" value="${fmt(form[id])}"></div></div>`;
+    inputs = `<div class="grid2">${f('sprSec','快跑 秒')}${f('sprM','快跑 公尺')}${f('sprInc','快跑 坡度%')}${f('jogSec','慢跑 秒')}${f('jogM','慢跑 公尺')}${f('jogInc','慢跑 坡度%')}${f('rounds','回合數')}</div>`;
+  } else {
+    const f = (id,l) => `<div><div class="label">${l}</div><div class="field"><input id="${id}" inputmode="decimal" value="${fmt(form[id])}"></div></div>`;
+    inputs = `<div class="grid2">${f('z2min','時間（分）')}${f('z2km','距離 km')}${f('z2inc','坡度 %')}</div>`;
+  }
+
+  app.innerHTML = `
+  <div class="top"><button class="iconbtn" id="back">‹</button><h1>${esc(it.ex)}</h1><span id="sync" class="sync"></span></div>
+  <div class="card">
+    <div class="row"><b style="flex:1">上次 ${it.lastDate ? shortDate(it.lastDate) : ''}</b>${it.best?`<span class="small faint">最佳 e1RM ${fmt(it.best)}</span>`:''}</div>
+    ${it.last.length ? `<table class="sets">${lastRows(it.last)}</table>` : '<p class="muted small">沒有紀錄</p>'}
+    ${it.suggestion ? `<div class="sug small" style="color:var(--accent);margin-top:8px">→ ${esc(it.suggestion.text)}</div>`:''}
+    ${it.prev2.length ? `<details class="prev2"><summary>再上一次 ${shortDate(it.prev2Date)}</summary><table class="sets">${lastRows(it.prev2)}</table></details>`:''}
+  </div>
+  <div class="card">
+    <b>今天</b>
+    ${it.todaySets.length ? `<table class="sets">${it.todaySets.map(s=>`<tr class="tap ${s.pending?'pend':''}" data-edit="${esc(s.setId)}"><td class="t">${s.setType==='正式'?'#'+fmt(s.setNo):esc(s.setType)}</td><td>${esc(setText({...s,_type:t}))}</td><td class="small faint">${s.pending?'同步中':'點一下修改'}</td></tr>`).join('')}</table>` : '<p class="muted small">還沒記錄</p>'}
+  </div>
+  <div class="card">
+    ${editing ? `<div class="edithead"><span>修改這一組</span><button id="cancelEdit">取消</button></div>`:''}
+    ${inputs}
+    <div class="label">備註</div><div class="field"><input id="note" value="${esc(form.note||'')}" placeholder="選填"></div>
+    <button class="big" id="log">${editing ? '更新這一組' : (isCardio(t) ? '記錄' : '記錄第 '+n+' 組')}</button>
+    ${editing ? '<button class="ghost danger" id="del">刪除這一組</button>' : ''}
+  </div>
+  <div class="row"><button class="ghost" id="prevEx" style="flex:1">‹ 上一個動作</button><button class="ghost" id="nextEx" style="flex:1">下一個動作 ›</button></div>
+  <div class="label">休息時間</div>
+  <div class="seg" id="restsel">${[60,90,120,180].map(x=>`<button data-v="${x}" class="${restSec===x?'on':''}">${x<120?x+'秒':(x/60)+'分'}</button>`).join('')}</div>
+  <div id="rest" class="rest hidden"><span class="small muted">休息</span><span class="time">0:00</span><button id="radd">＋30</button><button id="rskip">結束</button></div>`;
+  renderSync(); tickRest();
+
+  // 綁定
+  $('#back').onclick = () => { form=null; go({name:'day', day:view.day}); };
+  const readInputs = () => { app.querySelectorAll('input[id]').forEach(i => { if (i.id!=='note') form[i.id] = i.value; }); form.note = $('#note').value; };
+  app.querySelectorAll('[data-step]').forEach(b => b.onclick = () => {
+    readInputs(); const k=b.dataset.step; const v = (parseFloat(form[k])||0) + parseFloat(b.dataset.d);
+    form[k] = Math.max(0, Math.round(v*100)/100); $('#'+k).value = fmt(form[k]);
+  });
+  $('#stype') && $('#stype').querySelectorAll('button').forEach(b => b.onclick = () => {
+    readInputs(); if (form.editId){ form.setType=b.dataset.v; renderEx(); return; }
+    const keepNote=form.note; form = {...prefill(it, b.dataset.v), ex:it.ex, editId:null, note:keepNote}; renderEx();
+  });
+  $('#rir') && $('#rir').querySelectorAll('button').forEach(b => b.onclick = () => { readInputs(); form.rir = (String(form.rir)===b.dataset.v && form.setType!=='正式') ? '' : +b.dataset.v; $('#rir').querySelectorAll('button').forEach(x=>x.classList.toggle('on', String(form.rir)===x.dataset.v)); });
+  $('#restsel').querySelectorAll('button').forEach(b => b.onclick = () => { restSec=+b.dataset.v; LS.set('restSec',restSec); $('#restsel').querySelectorAll('button').forEach(x=>x.classList.toggle('on', x===b)); });
+  $('#rskip').onclick = () => { restEnd=0; LS.set('restEnd',0); tickRest(); };
+  $('#radd').onclick = () => { restEnd = Math.max(restEnd, Date.now()) + 30000; LS.set('restEnd',restEnd); beeped=false; tickRest(); };
+  app.querySelectorAll('[data-edit]').forEach(tr => tr.onclick = () => {
+    const s = it.todaySets.find(x=>x.setId===tr.dataset.edit); if (!s) return;
+    form = {...s, ex:it.ex, editId:s.setId, note:s.note||''}; renderEx(); window.scrollTo(0, document.body.scrollHeight);
+  });
+  $('#cancelEdit') && ($('#cancelEdit').onclick = () => { form = {...prefill(it,'正式'), ex:it.ex, editId:null}; renderEx(); });
+  $('#del') && ($('#del').onclick = () => { undoSet(it, form.editId); form = {...prefill(it,'正式'), ex:it.ex, editId:null}; renderEx(); });
+  const move = d => { const items = dayData().items; const j = view.i + d; if (j<0 || j>=items.length) return; form=null; go({name:'ex', day:view.day, i:j}); };
+  $('#prevEx').onclick = () => move(-1); $('#nextEx').onclick = () => move(1);
+  $('#log').onclick = () => { unlockAudio(); readInputs(); submit(it); };
+}
+
+function buildPayload(it, f){
+  const t = it.type, num = v => (v===''||v===undefined||v===null||isNaN(parseFloat(v))) ? '' : parseFloat(v);
+  const p = {date: todayStr(), day: view.day, ex: it.ex, setType: f.setType || '正式', note: f.note || ''};
+  if (t==='重量型' || t==='自重型'){
+    p.kg = num(f.kg); p.reps = num(f.reps); p.rir = num(f.rir);
+    if (t==='自重型' && p.kg===0) p.kg='';
+  } else if (t==='計時型') p.timedSec = num(f.timedSec);
+  else if (t==='有氧-HIIT') ['sprSec','sprM','sprInc','jogSec','jogM','jogInc','rounds'].forEach(k=>p[k]=num(f[k]));
+  else ['z2min','z2km','z2inc'].forEach(k=>p[k]=num(f[k]));
+  return p;
+}
+function validate(it, p){
+  const t = it.type;
+  if (t==='重量型' && (p.kg==='' || !(p.reps>0))) return '請填重量和次數';
+  if (t==='自重型' && !(p.reps>0)) return '請填次數';
+  if ((t==='重量型'||t==='自重型') && p.setType==='正式' && p.rir==='') return '正式組請選 RIR';
+  if (t==='計時型' && !(p.timedSec>0)) return '請填秒數';
+  if (t==='有氧-HIIT' && !(p.sprSec>0 || p.jogSec>0)) return '請填快跑或慢跑秒數';
+  if (isCardio(t) && t!=='有氧-HIIT' && !(p.z2min>0)) return '請填時間';
+  return '';
+}
+function submit(it){
+  const p = buildPayload(it, form);
+  const err = validate(it, p); if (err){ toast(err); return; }
+  if (form.editId){
+    const s = it.todaySets.find(x=>x.setId===form.editId);
+    p.setNo = s.setNo; p.set_id = s.setId;
+    Object.assign(s, stripEmpty(p));
+    const queued = queue.find(q => q.action==='set' && q.set_id===s.setId);
+    if (queued) { Object.assign(queued, p); LS.set('queue', queue); flush(); }
+    else enqueue({action:'update', ...p});
+    LS.set('cache', cache); toast('已更新');
+    form = {...prefill(it,'正式'), ex:it.ex, editId:null}; renderEx(); return;
+  }
+  p.setNo = nextSetNo(it, p.setType); p.set_id = uuid(); p.source = 'pwa';
+  const local = {...stripEmpty(p), setId:p.set_id, pending:true};
+  if (it.type==='重量型' || it.type==='自重型'){
+    // 本機先估 e1RM 給畫面看（自重型的體重由試算表算，這裡不估）
+    if (it.type==='重量型' && p.kg>0 && p.reps>0) local.e1rm = Math.round(p.kg*(1+(p.reps+(Number(p.rir)||0))/30)*10)/10;
+  }
+  it.todaySets.push(local); LS.set('cache', cache);
+  enqueue({action:'set', ...p});
+  if (!isCardio(it.type)) startRest();
+  toast('已記錄 ' + setText({...local, _type:it.type}), {label:'撤銷', fn:()=>{ undoSet(it, local.setId); form = {...prefill(it,form.setType||'正式'), ex:it.ex, editId:null}; renderEx(); }});
+  form = {...prefill(it, p.setType==='下降組' ? '下降組' : p.setType), ex:it.ex, editId:null};
+  renderEx();
+}
+function stripEmpty(p){ const o={}; for (const [k,v] of Object.entries(p)) if (v!=='' && v!==undefined) o[k]=v; return o; }
+function undoSet(it, setId){
+  it.todaySets = it.todaySets.filter(s=>s.setId!==setId);
+  const i = queue.findIndex(q => q.action==='set' && q.set_id===setId);
+  if (i>=0 && !(flushing && i===0)){ queue.splice(i,1); queue = queue.filter(q=>q.set_id!==setId); LS.set('queue', queue); }
+  else enqueue({action:'undo', set_id:setId});
+  LS.set('cache', cache); renderSync(); toast('已刪除');
+}
+
+/* ─────────── 啟動 ─────────── */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+render(); flush();
+</script>
+</body>
+</html>
