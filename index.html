@@ -43,6 +43,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-
 .ex .name{font-weight:600;font-size:17px}
 .ex .last{font-size:14px;color:var(--dim);margin-top:2px}
 .ex .sug{font-size:13px;color:var(--accent);margin-top:2px}
+.plan{font-size:13px;color:var(--text);opacity:.85;margin-top:2px}
 .badge{min-width:42px;height:42px;border-radius:21px;background:var(--panel2);display:grid;place-items:center;font-weight:700;font-size:14px}
 .badge.done{background:var(--accent);color:var(--accent-ink)}
 .sets{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
@@ -117,6 +118,16 @@ function cardioText(s){
   if (s.z2min!==undefined) return [fmt(s.z2min)+' 分', s.z2km!==undefined?fmt(s.z2km)+' km':'', s.z2inc!==undefined?fmt(s.z2inc)+'%':''].filter(Boolean).join(' · ');
   if (s.sprSec!==undefined||s.jogSec!==undefined) return (s.rounds||1)+' 回 · 衝 '+fmt(s.sprSec)+'s/'+fmt(s.sprM)+'m · 慢 '+fmt(s.jogSec)+'s/'+fmt(s.jogM)+'m';
   return '';
+}
+/** 菜單處方文字：「第1組 5-9｜第2組 10-15」或「3 組 × 10-15 下」「3 組 力竭」 */
+function planText(p){
+  if (!p) return '';
+  const r = p.reps || [];
+  const unit = x => /^\d/.test(x) ? x+' 下' : x;
+  let t = r.length > 1 ? r.map((x,i)=>`第${i+1}組 ${unit(x)}`).join('｜')
+        : (p.sets ? p.sets+' 組' : '') + (r.length ? (p.sets ? (/^\d/.test(r[0]) ? ' × ' : ' ') : '') + unit(r[0]) : '');
+  if (p.note) t += (t ? '・' : '') + p.note;
+  return t;
 }
 function summary(sets, type){
   if (!sets || !sets.length) return '';
@@ -330,10 +341,11 @@ function renderDay(){
   <div class="top"><button class="iconbtn" id="back">‹</button><h1>${esc(view.day)}</h1><span id="sync" class="sync"></span></div>
   <div id="list">${!d ? '<p class="muted">載入中…</p>' : (d.items.length ? d.items.map((it,i) => {
       const n = it.todaySets.filter(s=>s.setType!=='熱身').length;
-      const target = it.last.filter(s=>s.setType==='正式').length || '';
+      const target = it.plan?.sets || it.last.filter(s=>s.setType==='正式').length || '';
       return `<div class="card"><button class="ex" data-i="${i}">
         <div class="badge ${target && n>=target ? 'done':''}">${n}${target?'/'+target:''}</div>
         <div class="body"><div class="name">${esc(it.ex)}</div>
+        ${it.plan && planText(it.plan) ? `<div class="plan">${esc(planText(it.plan))}</div>`:''}
         <div class="last">${it.lastDate ? shortDate(it.lastDate)+'：'+esc(summary(it.last, it.type)) : '第一次做'}</div>
         ${it.suggestion ? `<div class="sug">→ ${esc(it.suggestion.text)}</div>`:''}</div></button></div>`; }).join('')
     : '<p class="muted">這個訓練日還沒有紀錄。按下面加入動作。</p>')}
@@ -392,6 +404,12 @@ function prefill(it, setType){
   reps = lastSame?.reps ?? todayPrev?.reps ?? 8;
   if (setType==='正式' && sug && lastSame && Number(kg)===Number(sug.kg)) reps = Math.max(1, Number(lastSame.reps) + (sug.repsDelta||0));
   rir = lastSame?.rir ?? (setType==='正式' ? 2 : '');
+  // 第一次做：次數用菜單這一組的下限，「力竭」預設 RIR 0
+  if (!lastSame && setType==='正式' && it.plan?.reps?.length){
+    const r = it.plan.reps[n-1] ?? it.plan.reps[it.plan.reps.length-1];
+    const m = /\d+/.exec(r);
+    if (m) reps = Number(m[0]); else if (r==='力竭') rir = 0;
+  }
   if (setType==='下降組') rir = 0;
   return {setType, kg, reps, rir, note:''};
 }
@@ -428,6 +446,7 @@ function renderEx(){
 
   app.innerHTML = `
   <div class="top"><button class="iconbtn" id="back">‹</button><h1>${esc(it.ex)}</h1><span id="sync" class="sync"></span></div>
+  ${it.plan && planText(it.plan) ? `<div class="card"><div class="small muted">菜單</div><div style="margin-top:4px">${esc(planText(it.plan))}</div></div>`:''}
   <div class="card">
     <div class="row"><b style="flex:1">上次 ${it.lastDate ? shortDate(it.lastDate) : ''}</b>${it.best?`<span class="small faint">最佳 e1RM ${fmt(it.best)}</span>`:''}</div>
     ${it.last.length ? `<table class="sets">${lastRows(it.last)}</table>` : '<p class="muted small">沒有紀錄</p>'}
