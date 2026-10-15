@@ -116,12 +116,12 @@ button.exh:active{background:var(--panel2)}
 .mseg{display:flex;background:var(--bg);border-radius:10px;padding:3px;gap:2px}
 .mseg button{height:32px;padding:0 14px;border-radius:8px;font-size:14px;font-weight:600;color:var(--dim)}
 .mseg button.on{background:var(--panel3);color:var(--text)}
-.steppers{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.steppers{display:grid;grid-template-columns:1fr;gap:12px}
 .stp .lab,.lab{font-size:13px;color:var(--dim);margin-bottom:6px}
-.ctl{display:grid;grid-template-columns:46px minmax(0,1fr) 46px;height:58px;background:var(--bg);border-radius:14px;overflow:hidden}
-.ctl button{font-size:26px;font-weight:500;color:var(--text);transition:background .1s}
+.ctl{display:grid;grid-template-columns:72px minmax(0,1fr) 72px;height:60px;background:var(--bg);border-radius:14px;overflow:hidden}
+.ctl button{font-size:28px;font-weight:500;color:var(--text);transition:background .1s}
 .ctl button:active{background:var(--panel3)}
-.ctl input{min-width:0;width:100%;border:0;background:transparent;color:var(--text);text-align:center;font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;padding:0}
+.ctl input{min-width:0;width:100%;border:0;background:transparent;color:var(--text);text-align:center;font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;padding:0}
 .ctl input:focus{outline:none;background:#0a0b0c}
 .rirlab{margin-top:14px}
 .seg{display:flex;gap:6px}
@@ -237,12 +237,10 @@ const ICON = {
   x:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
 };
 
-/** 重量步進：啞鈴 2 kg；其他 <15 kg 為 1、否則 2.5 */
-function kgStep(it, kg){
-  if (it.type==='重量型' && isDB(it.ex)) return 2;
-  if (it.type==='重量型' && Number(kg) < 15) return 1;
-  return 2.5;
-}
+/** ＋／− 按鈕的重量步進：一律 1 kg */
+function kgStep(){ return 1; }
+/** 下降組預填重量的取整單位：啞鈴 2 kg、其他 1 kg */
+function plateStep(it){ return (it.type==='重量型' && isDB(it.ex)) ? 2 : 1; }
 /** 啞鈴的建議重量對齊 2 kg（後端規則是 +2.5） */
 function sugOf(it){
   const s = it.suggestion;
@@ -610,7 +608,7 @@ function prefill(it, setType){
     else kg = lastSame?.kg ?? '';
   } else {
     if (lastSame && lastSame.kg!==undefined && lastSame.kg!=='') kg = lastSame.kg;
-    else if (todayPrev && Number(todayPrev.kg) > 0){ const st = kgStep(it, todayPrev.kg*0.75); kg = Math.max(0, Math.round(todayPrev.kg*0.75/st)*st); }
+    else if (todayPrev && Number(todayPrev.kg) > 0){ const st = plateStep(it); kg = Math.max(0, Math.round(todayPrev.kg*0.75/st)*st); }
     else kg = '';
   }
   reps = lastSame?.reps ?? todayPrev?.reps ?? 8;
@@ -636,6 +634,7 @@ function updateCur(){
 
 /* ─────────── 訓練頁：整場一頁 ─────────── */
 function renderDay(){
+  stopHold();
   const d = dayData();
   if (!view.loaded && !loading[view.day]) loadDay(view.day);
   const items = d?.items || [];
@@ -772,23 +771,31 @@ function stepField(k, dir){
   const it = activeItem(); if (!it) return;
   let v = parseFloat(form[k]); if (isNaN(v)) v = 0;
   if (k==='kg'){
-    const st = kgStep(it, dir<0 ? v-0.001 : v);
-    if (st===2 && v % 2 !== 0) v = dir>0 ? Math.floor(v/2)*2 + 2 : Math.ceil(v/2)*2 - 2;
-    else v += dir*st;
+    v += dir * kgStep();
   } else v += dir * (k==='timedSec' ? 5 : 1);
   form[k] = Math.max(0, Math.round(v*100)/100);
   const inp = $('#'+k); if (inp) inp.value = fmt(form[k]);
   updateCur();
 }
+/* 長按：全域只有一組計時器。手指放開（在任何地方）、按鈕被重繪掉、切到背景、
+   或連續超過約 6 秒，都會停下來，不會再失控 */
+let holdT1 = null, holdT2 = null, holdBtn = null;
+function stopHold(){ clearTimeout(holdT1); clearInterval(holdT2); holdT1 = holdT2 = null; holdBtn = null; }
+['pointerup','pointercancel','touchend','touchcancel','mouseup','blur'].forEach(ev => window.addEventListener(ev, stopHold, true));
+document.addEventListener('visibilitychange', stopHold);
 function bindStepper(b){
-  let t1 = null, t2 = null;
   const k = b.dataset.step, dir = +b.dataset.dir;
-  const stop = () => { clearTimeout(t1); clearInterval(t2); t1 = t2 = null; };
   b.addEventListener('pointerdown', e => {
-    e.preventDefault(); readInputs(); stepField(k, dir);
-    t1 = setTimeout(() => { t2 = setInterval(() => stepField(k, dir), 85); }, 380);
+    e.preventDefault(); stopHold(); readInputs(); stepField(k, dir);
+    holdBtn = b; let n = 0;
+    holdT1 = setTimeout(() => {
+      holdT2 = setInterval(() => {
+        if (holdBtn !== b || !b.isConnected || ++n > 55) return stopHold();
+        stepField(k, dir);
+      }, 110);
+    }, 450);
   });
-  ['pointerup','pointerleave','pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+  b.addEventListener('pointerleave', stopHold);
   b.addEventListener('contextmenu', e => e.preventDefault());
 }
 
@@ -815,6 +822,7 @@ function bindDay(){
     readInputs(); const v = b.dataset.v;
     if (form.editId){ form.setType = v; if (v==='下降組') form.rir = 0; renderDay(); return; }
     const keep = form.note;
+    if (v==='下降組') stopRest();
     form = {...prefill(it, v), ex:it.ex, editId:null, note:keep, more: v==='下降組' || isDone(it)}; renderDay();
   });
   $('#rir') && $('#rir').querySelectorAll('button').forEach(b => b.onclick = () => {
@@ -828,7 +836,7 @@ function bindDay(){
   $('#cancelEdit') && ($('#cancelEdit').onclick = () => { form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:false}; renderDay(); });
   $('#del') && ($('#del').onclick = () => { undoSet(it, form.editId); form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:false}; renderDay(); });
   $('#more') && ($('#more').onclick = () => { form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:true}; renderDay(); });
-  $('#dropbtn') && ($('#dropbtn').onclick = () => { form = {...prefill(it,'下降組'), ex:it.ex, editId:null, more:true}; renderDay(); });
+  $('#dropbtn') && ($('#dropbtn').onclick = () => { stopRest(); form = {...prefill(it,'下降組'), ex:it.ex, editId:null, more:true}; renderDay(); });
   $('#nextEx') && ($('#nextEx').onclick = advance);
 }
 
@@ -906,7 +914,7 @@ function submit(it){
   if (p.setType==='下降組') form = {...prefill(it,'下降組'), ex:it.ex, editId:null, more:true};
   else form = {...prefill(it,'正式'), ex:it.ex, editId:null, more: wasDone};
   renderDay(); justLogged = null;
-  if (!isCardio(it.type)) startRest();
+  if (!isCardio(it.type) && p.setType!=='下降組') startRest();
 
   // 剛好做完目標組數：沒有下降組習慣的動作自動跳到下一個
   if (!wasDone && isDone(it) && p.setType==='正式' && !dropRel(it) && nextOpenIdx(view.active) >= 0){

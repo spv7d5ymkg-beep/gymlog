@@ -1,5 +1,5 @@
 // 只快取 App 本身（畫面檔案），讓健身房訊號不好時也能秒開；API 請求一律走網路。
-const VERSION = 'gymlog-v1';
+const VERSION = 'gymlog-v2';
 const SHELL = ['./', './index.html', './manifest.json', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
