@@ -130,8 +130,10 @@ button.exh:active{background:var(--panel2)}
 .notebtn{margin-top:12px;font-size:14px;color:var(--dim);padding:6px 0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 #note{margin-top:8px;width:100%}
 .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.cgrid .lab{margin-top:4px}
-.cgrid input{width:100%;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:18px;font-variant-numeric:tabular-nums}
+.cgrid .lab,.cgrid3 .lab{margin-top:4px}
+.cgrid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.cdist{margin-top:10px;font-size:13px;color:var(--dim)}
+.cgrid input,.cgrid3 input{width:100%;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:18px;font-variant-numeric:tabular-nums}
 .big{display:block;width:100%;height:58px;border-radius:16px;background:var(--accent);color:var(--accent-ink);font-size:18px;font-weight:800;margin-top:14px;transition:transform .1s}
 .big:active{transform:scale(.98)}
 .ghost{display:block;width:100%;height:48px;border-radius:12px;background:var(--panel2);margin-top:8px;font-weight:650}
@@ -260,9 +262,40 @@ function setText(s){
   return kg + '×' + fmt(s.reps) + (s.rir!==undefined && s.rir!=='' && s.rir!==null ? ' @'+fmt(s.rir) : '');
 }
 function cardioText(s){
-  if (s.z2min!==undefined && s.z2min!=='') return [fmt(s.z2min)+' 分', s.z2km!==undefined&&s.z2km!==''?fmt(s.z2km)+' km':'', s.z2inc!==undefined&&s.z2inc!==''?fmt(s.z2inc)+'%':''].filter(Boolean).join(' · ');
-  if (s.sprSec!==undefined||s.jogSec!==undefined) return (s.rounds||1)+' 回 · 衝 '+fmt(s.sprSec)+'s/'+fmt(s.sprM)+'m · 慢 '+fmt(s.jogSec)+'s/'+fmt(s.jogM)+'m';
+  const v = withSpeed(s), has = x => x!==undefined && x!=='' && x!==null;
+  if (has(s.z2min)) return [fmt(s.z2min)+' 分', has(v.z2spd)?fmt(v.z2spd)+' km/h':'', has(s.z2km)?fmt(s.z2km)+' km':'', has(s.z2inc)?fmt(s.z2inc)+'%':''].filter(Boolean).join(' · ');
+  if (has(s.sprSec)||has(s.jogSec)){
+    const seg = (sec, spd) => fmt(sec)+'s' + (has(spd) ? ' @'+fmt(spd) : '');
+    return (s.rounds||1)+' 回 · 衝 '+seg(s.sprSec, v.sprSpd)+' · 慢 '+seg(s.jogSec, v.jogSpd);
+  }
   return '—';
+}
+/* 跑步機設定的是速度：畫面輸入速度，送出前換算成試算表要的距離
+   Zone2／耐力：km ＝ 速度(km/h) × 分 ÷ 60；HIIT：公尺 ＝ 速度(km/h) ÷ 3.6 × 秒 */
+const numv = v => parseFloat(v);
+function withDistance(f, t){
+  const o = {...f};
+  const seg = (spd, sec) => numv(f[spd])>0 && numv(f[sec])>0 ? Math.round(numv(f[spd])/3.6*numv(f[sec])) : '';
+  if (t==='有氧-HIIT'){ o.sprM = seg('sprSpd','sprSec'); o.jogM = seg('jogSpd','jogSec'); }
+  else o.z2km = numv(f.z2spd)>0 && numv(f.z2min)>0 ? Math.round(numv(f.z2spd)*numv(f.z2min)/60*100)/100 : '';
+  return o;
+}
+/** 由距離反推速度（預填與修改舊紀錄用） */
+function withSpeed(f){
+  const o = {...f}, r1 = x => Math.round(x*10)/10;
+  if ((o.z2spd===undefined||o.z2spd==='') && numv(f.z2km)>0 && numv(f.z2min)>0) o.z2spd = r1(numv(f.z2km)/numv(f.z2min)*60);
+  if ((o.sprSpd===undefined||o.sprSpd==='') && numv(f.sprM)>0 && numv(f.sprSec)>0) o.sprSpd = r1(numv(f.sprM)/numv(f.sprSec)*3.6);
+  if ((o.jogSpd===undefined||o.jogSpd==='') && numv(f.jogM)>0 && numv(f.jogSec)>0) o.jogSpd = r1(numv(f.jogM)/numv(f.jogSec)*3.6);
+  return o;
+}
+function distText(f, t){
+  const d = withDistance(f, t);
+  if (t==='有氧-HIIT'){
+    if (d.sprM==='' && d.jogM==='') return '填入秒數和速度後，會自動換算距離';
+    const r = Math.max(1, numv(f.rounds)||1), tot = ((Number(d.sprM)||0)+(Number(d.jogM)||0))*r/1000;
+    return `每回合 快跑 ${d.sprM===''?'—':d.sprM+' m'}・慢跑 ${d.jogM===''?'—':d.jogM+' m'}；總距離 ≈ ${fmt(Math.round(tot*100)/100)} km`;
+  }
+  return d.z2km==='' ? '填入時間和速度後，會自動換算距離' : `距離 ≈ ${fmt(d.z2km)} km（自動換算）`;
 }
 /** 菜單處方文字：「第1組 5-9｜第2組 10-15」或「3 組 × 10-15 下」「3 組 力竭」 */
 function planText(p){
@@ -593,7 +626,7 @@ function prefill(it, setType){
       if (it.suggestion?.timedSec && !it.todaySets.length) f.timedSec = it.suggestion.timedSec;
     }
     f.note = '';
-    return f;
+    return withSpeed(f);
   }
   const idx = it.todaySets.filter(s => s.setType===setType).length;
   const pool = it.last.filter(s => s.setType===setType);
@@ -629,8 +662,11 @@ function readInputs(){
 }
 function updateCur(){
   const c = $('#curnow'), it = activeItem();
-  if (c && it && form) c.textContent = setText({...form, _type:it.type});
+  if (c && it && form) c.textContent = setText({...shownForm(it), _type:it.type});
+  const d = $('#cdist'); if (d && it && form) d.textContent = distText(form, it.type);
 }
+/** 目前輸入的值（有氧把速度換成距離後再顯示） */
+function shownForm(it){ return isCardio(it.type) ? withDistance(form, it.type) : form; }
 
 /* ─────────── 訓練頁：整場一頁 ─────────── */
 function renderDay(){
@@ -690,12 +726,12 @@ function exBlock(it, i){
   for (let k=0; k<remain; k++){
     const cur = k===0 && curWork;
     rows.push(`<div class="srow plan ${cur?'cur':''}"><span class="no">#${n+k+1}</span><span class="prev">${prevTxt(lastW[n+k])}</span>
-      <span class="now" ${cur?'id="curnow"':''}>${cur ? esc(setText({...form,_type:t})) : ''}</span><span class="st"></span></div>`);
+      <span class="now" ${cur?'id="curnow"':''}>${cur ? esc(setText({...shownForm(it),_type:t})) : ''}</span><span class="st"></span></div>`);
   }
   if (showEd && !form.editId && (form.setType==='下降組' || (curWork && remain===0))){
     const drop = form.setType==='下降組';
     rows.push(`<div class="srow plan cur ${drop?'drop':''}"><span class="no">${drop?'降':'#'+(n+1)}</span>
-      <span class="prev">${prevTxt(drop ? lastD[di] : lastW[n])}</span><span class="now" id="curnow">${esc(setText({...form,_type:t}))}</span><span class="st"></span></div>`);
+      <span class="prev">${prevTxt(drop ? lastD[di] : lastW[n])}</span><span class="now" id="curnow">${esc(setText({...shownForm(it),_type:t}))}</span><span class="st"></span></div>`);
   }
   const hasRows = rows.length > 0;
   const nextIdx = nextOpenIdx(i);
@@ -730,11 +766,15 @@ function editorHTML(it, n){
   } else if (t==='計時型'){
     inputs = `<div class="steppers" style="grid-template-columns:1fr">${stepper('timedSec', '秒數', 'numeric')}</div>`;
   } else if (t==='有氧-HIIT'){
-    const c = (id,l) => `<div><div class="lab">${l}</div><input id="${id}" inputmode="decimal" value="${fmt(f[id])}"></div>`;
-    inputs = `<div class="cgrid">${c('sprSec','快跑 秒')}${c('sprM','快跑 公尺')}${c('sprInc','快跑 坡度%')}${c('jogSec','慢跑 秒')}${c('jogM','慢跑 公尺')}${c('jogInc','慢跑 坡度%')}${c('rounds','回合數')}</div>`;
+    const c = (id,l,m='decimal') => `<div><div class="lab">${l}</div><input id="${id}" inputmode="${m}" value="${fmt(f[id])}"></div>`;
+    inputs = `<div class="lab">快跑（每回合）</div><div class="cgrid3">${c('sprSec','秒','numeric')}${c('sprSpd','速度 km/h')}${c('sprInc','坡度 %')}</div>
+      <div class="lab" style="margin-top:14px">慢跑（每回合）</div><div class="cgrid3">${c('jogSec','秒','numeric')}${c('jogSpd','速度 km/h')}${c('jogInc','坡度 %')}</div>
+      <div class="cgrid3" style="margin-top:14px">${c('rounds','回合數','numeric')}</div>
+      <div class="cdist" id="cdist">${esc(distText(f,t))}</div>`;
   } else {
     const c = (id,l) => `<div><div class="lab">${l}</div><input id="${id}" inputmode="decimal" value="${fmt(f[id])}"></div>`;
-    inputs = `<div class="cgrid">${c('z2min','時間（分）')}${c('z2km','距離 km')}${c('z2inc','坡度 %')}</div>`;
+    inputs = `<div class="cgrid3">${c('z2min','時間 分')}${c('z2spd','速度 km/h')}${c('z2inc','坡度 %')}</div>
+      <div class="cdist" id="cdist">${esc(distText(f,t))}</div>`;
   }
   const label = editing ? '更新這一組' : isCardio(t) ? '記錄' : t==='計時型' ? `完成第 ${n+1} 組`
     : f.setType==='下降組' ? '完成下降組' : `完成第 ${n+1} 組`;
@@ -813,7 +853,7 @@ function bindDay(){
 
   app.querySelectorAll('[data-edit]').forEach(r => r.onclick = () => {
     const s = it.todaySets.find(x=>x.setId===r.dataset.edit); if (!s) return;
-    form = {...s, ex:it.ex, editId:s.setId, note:s.note||'', more:false}; renderDay();
+    form = withSpeed({...s, ex:it.ex, editId:s.setId, note:s.note||'', more:false}); renderDay();
     requestAnimationFrame(() => { const e = $('#ex'+view.active+' .ed'); if (e) e.scrollIntoView({behavior:'smooth', block:'center'}); });
   });
   app.querySelectorAll('[data-step]').forEach(bindStepper);
@@ -860,8 +900,8 @@ function buildPayload(it, f){
     p.kg = num(f.kg); p.reps = num(f.reps); p.rir = num(f.rir);
     if (t==='自重型' && p.kg===0) p.kg='';
   } else if (t==='計時型') p.timedSec = num(f.timedSec);
-  else if (t==='有氧-HIIT') ['sprSec','sprM','sprInc','jogSec','jogM','jogInc','rounds'].forEach(k=>p[k]=num(f[k]));
-  else ['z2min','z2km','z2inc'].forEach(k=>p[k]=num(f[k]));
+  else if (t==='有氧-HIIT'){ const g = withDistance(f, t); ['sprSec','sprM','sprInc','jogSec','jogM','jogInc','rounds'].forEach(k=>p[k]=num(g[k])); }
+  else { const g = withDistance(f, t); ['z2min','z2km','z2inc'].forEach(k=>p[k]=num(g[k])); }
   return p;
 }
 function validate(it, p){
