@@ -585,7 +585,8 @@ function mergeDay(day, r){
 function dayData(){ return cache[view.day]; }
 function dayItems(){ return dayData()?.items || []; }
 const workCount = it => it.todaySets.filter(s=>s.setType==='正式' || !s.setType).length;
-const targetOf = it => it.plan?.sets || it.last.filter(s=>s.setType==='正式').length || 0;
+/** 目標組數只給菜單上的動作；菜單外（歷史帶出或臨時加入）的動作不設目標，輸入區一直開著 */
+const targetOf = it => it.plan ? (it.plan.sets || it.last.filter(s=>s.setType==='正式').length || 0) : 0;
 const workDone = it => { const t = targetOf(it); return t>0 && workCount(it)>=t; };
 /** 菜單備註「另加 N 組下降組」＝這個動作本來就排了 N 組下降組 */
 const plannedDrops = it => { if (!isWeighty(it.type)) return 0; const m = /另加\s*(\d+)\s*組下降組/.exec(it.plan?.note || ''); return m ? +m[1] : 0; };
@@ -593,6 +594,8 @@ const dropCount = it => it.todaySets.filter(s=>s.setType==='下降組').length;
 const skipKey = it => sessKey(view.day)+'|'+it.ex;
 const dropsLeft = it => skips[skipKey(it)] ? 0 : Math.max(0, plannedDrops(it) - dropCount(it));
 const isDone = it => workDone(it) && dropsLeft(it)===0;
+/** 菜單上、還沒做完的動作（自動跳轉只跳到這些；菜單外的動作不會被自動打開） */
+const isPending = it => targetOf(it)>0 && !isDone(it);
 const dropRel = it => isWeighty(it.type) && (/下降/.test(planText(it.plan)) || it.last.some(s=>s.setType==='下降組') || it.todaySets.some(s=>s.setType==='下降組'));
 function activeItem(){ return dayItems()[view.active]; }
 
@@ -667,7 +670,9 @@ function renderDay(){
   if (!view.loaded && !loading[view.day]) loadDay(view.day);
   const items = d?.items || [];
   if (d && (view.active===undefined || view.active >= items.length)){
-    const i = items.findIndex(it => !isDone(it));
+    // 先找菜單上還沒做完的；整天都沒有目標組數（例如第一次的 Cardio）才退回第一個
+    let i = items.findIndex(isPending);
+    if (i<0 && !items.some(x=>targetOf(x)>0)) i = items.findIndex(x=>!x.todaySets.length);
     view.active = items.length ? (i<0 ? -1 : i) : -1;
   }
   const it = activeItem(); if (it) ensureForm(it);
@@ -790,8 +795,8 @@ function editorHTML(it, n){
 
 function nextOpenIdx(from){
   const items = dayItems();
-  for (let j=from+1; j<items.length; j++) if (!isDone(items[j])) return j;
-  for (let j=0; j<from; j++) if (!isDone(items[j])) return j;
+  for (let j=from+1; j<items.length; j++) if (isPending(items[j])) return j;
+  for (let j=0; j<from; j++) if (isPending(items[j])) return j;
   return -1;
 }
 function scrollToActive(){
