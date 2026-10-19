@@ -46,6 +46,8 @@ body.resting .app{padding-bottom:calc(var(--safe-b) + 104px)}
 .iconbtn:active{background:var(--panel2)}
 .sync{font-size:13px;padding:6px 10px;border-radius:999px;background:var(--panel);color:var(--warn);white-space:nowrap}
 .sync.err{color:var(--bad)}
+.endbtn{height:36px;padding:0 14px;border-radius:18px;background:var(--panel);color:var(--good);font-weight:700;font-size:15px;white-space:nowrap}
+.endbtn:active{background:var(--panel2)}
 
 .card{background:var(--panel);border-radius:var(--r);padding:14px 16px;margin-bottom:10px}
 .label{font-size:13px;color:var(--dim);margin:14px 0 6px}
@@ -192,6 +194,11 @@ button.exh:active{background:var(--panel2)}
 .sumlist div{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:15px}
 .sumlist span:last-child{color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
 .pr{background:rgba(198,244,50,.1);color:var(--accent);border-radius:12px;padding:10px 12px;font-weight:650;margin-bottom:6px}
+.skipped{background:var(--bg);border-radius:12px;padding:10px 12px;margin-bottom:6px;font-size:14px;color:var(--dim);line-height:1.5}
+.skipped b{color:var(--warn);display:block;font-size:15px}
+.seg.wrap{flex-wrap:wrap} .seg.wrap button{flex:1 0 30%}
+.sel{width:100%;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:0 12px;font-size:17px;-webkit-appearance:none;appearance:none}
+.syn{display:grid;grid-template-columns:1fr;gap:8px}
 .haptic{position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none}
 </style>
 </head>
@@ -215,6 +222,9 @@ let restSec = LS.get('restSec', 120);
 let sessions = LS.get('sessions', {});     // {'日期|訓練日': {start, last}} 由第一組／最後一組時間推算
 let finished = LS.get('finished', {});     // {'日期|訓練日': true}
 let dayCount = LS.get('dayCount', {});     // 每個訓練日的動作數（首頁顯示用）
+let skips = LS.get('skipDrops', {});       // {'日期|訓練日|動作': true} 今天略過菜單下降組的動作
+const MUSCLES = ['胸','三角肌前束','三角肌中束','三角肌後束','背闊肌','上背（斜方／菱形）','二頭肌','三頭肌','前臂','股四頭肌','腿後肌','臀肌','小腿','腹肌','下背'];
+const EX_TYPES = ['重量型','自重型','計時型','有氧-Zone2','有氧-HIIT','有氧-耐力'];
 
 /* ─────────── 工具 ─────────── */
 const $ = (s, el=document) => el.querySelector(s);
@@ -316,7 +326,7 @@ async function flush(){
         queue.shift(); LS.set('queue', queue); syncErr='';
         markSynced(op);
       }catch(e){
-        if (['unauthorized','bad_json','bad_rir','bad_date','missing_ex','missing_set_id','bad_kg'].includes(e.code)){
+        if (['unauthorized','bad_json','bad_rir','bad_date','missing_ex','missing_set_id','bad_kg','bad_name','bad_type','bad_muscle','list_full','unknown_action'].includes(e.code)){
           queue.shift(); LS.set('queue', queue); syncErr = '有一筆被拒絕：'+e.message; toast(syncErr);
         } else if (e.code==='not_found' && op.action==='update'){
           queue.shift(); LS.set('queue', queue);
@@ -456,7 +466,14 @@ function renderSetup(){
 }
 async function loadMeta(){
   const r = await apiGet({action:'bootstrap', date: todayStr()});
-  meta = {days:r.days, exercises:r.exercises, bodyweight:r.bodyweight, lastDayDone:r.lastDayDone, at:Date.now()};
+  setMeta(r);
+}
+/** bootstrap 的共用欄位存到 meta；還沒送出的新動作先留著，免得被舊清單蓋掉 */
+function setMeta(r){
+  const pend = queue.filter(q=>q.action==='addExercise').map(q=>({name:q.name, type:q.type}));
+  const exercises = (r.exercises||[]).slice();
+  for (const p of pend) if (!exercises.some(e=>e.name.toLowerCase()===p.name.toLowerCase())) exercises.push(p);
+  meta = {days:r.days, exercises, muscles:r.muscles, bodyweight:r.bodyweight, lastDayDone:r.lastDayDone, at:Date.now()};
   LS.set('meta', meta);
 }
 
@@ -538,7 +555,7 @@ async function loadDay(day){
   try{
     const r = await apiGet({action:'bootstrap', day, date: todayStr()});
     mergeDay(day, r);
-    meta = {days:r.days, exercises:r.exercises, bodyweight:r.bodyweight, lastDayDone:r.lastDayDone, at:Date.now()}; LS.set('meta', meta);
+    setMeta(r);
     dayCount[day] = r.items.filter(it=>it.plan).length || r.items.length; LS.set('dayCount', dayCount);
   }catch(e){
     if (!cache[day]) toast('讀取失敗：'+e.message); else toast('離線中，顯示上次載入的資料');
@@ -569,7 +586,13 @@ function dayData(){ return cache[view.day]; }
 function dayItems(){ return dayData()?.items || []; }
 const workCount = it => it.todaySets.filter(s=>s.setType==='正式' || !s.setType).length;
 const targetOf = it => it.plan?.sets || it.last.filter(s=>s.setType==='正式').length || 0;
-const isDone = it => { const t = targetOf(it); return t>0 && workCount(it)>=t; };
+const workDone = it => { const t = targetOf(it); return t>0 && workCount(it)>=t; };
+/** 菜單備註「另加 N 組下降組」＝這個動作本來就排了 N 組下降組 */
+const plannedDrops = it => { if (!isWeighty(it.type)) return 0; const m = /另加\s*(\d+)\s*組下降組/.exec(it.plan?.note || ''); return m ? +m[1] : 0; };
+const dropCount = it => it.todaySets.filter(s=>s.setType==='下降組').length;
+const skipKey = it => sessKey(view.day)+'|'+it.ex;
+const dropsLeft = it => skips[skipKey(it)] ? 0 : Math.max(0, plannedDrops(it) - dropCount(it));
+const isDone = it => workDone(it) && dropsLeft(it)===0;
 const dropRel = it => isWeighty(it.type) && (/下降/.test(planText(it.plan)) || it.last.some(s=>s.setType==='下降組') || it.todaySets.some(s=>s.setType==='下降組'));
 function activeItem(){ return dayItems()[view.active]; }
 
@@ -622,7 +645,12 @@ function prefill(it, setType){
   if (setType==='下降組') rir = 0;
   return {setType, kg, reps, rir, note:''};
 }
-function ensureForm(it){ if (!form || form.ex!==it.ex) form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:false}; }
+/** 下一組的預設輸入：正式組做完、菜單還有下降組沒做 → 直接切到下降組 */
+function defaultForm(it){
+  const st = (workDone(it) && dropsLeft(it)>0) ? '下降組' : '正式';
+  return {...prefill(it, st), ex:it.ex, editId:null, more:false};
+}
+function ensureForm(it){ if (!form || form.ex!==it.ex) form = defaultForm(it); }
 function readInputs(){
   if (!form) return;
   app.querySelectorAll('.ed input[id]').forEach(i => { if (i.id==='note') form.note = i.value; else form[i.id] = i.value; });
@@ -645,11 +673,10 @@ function renderDay(){
   const it = activeItem(); if (it) ensureForm(it);
   const total = items.reduce((a,x)=>a+x.todaySets.length, 0);
   app.innerHTML = `
-  <div class="top"><button class="iconbtn" id="back" aria-label="返回">${ICON.back}</button><h1>${esc(view.day)}</h1><span id="sync" class="sync hidden"></span></div>
+  <div class="top"><button class="iconbtn" id="back" aria-label="返回">${ICON.back}</button><h1>${esc(view.day)}</h1><span id="sync" class="sync hidden"></span>${total ? '<button class="endbtn" id="end">結束</button>' : ''}</div>
   <div id="list">${!d ? '<div class="exb skel"></div><div class="exb skel"></div><div class="exb skel"></div>'
     : (items.length ? items.map((x,i)=>exBlock(x,i)).join('') : '<p class="muted empty">這個訓練日還沒有動作，按下面加入。</p>')}</div>
   <button class="ghost" id="add">＋ 加入其他動作</button>
-  ${total && !items.every(isDone) ? '<button class="finish" id="finish">完成訓練</button>' : ''}
   ${restBarHTML()}`;
   renderSync(); tickRest(); bindRest();
   bindDay();
@@ -657,7 +684,8 @@ function renderDay(){
 
 function exBlock(it, i){
   const t = it.type, n = workCount(it), target = targetOf(it), done = isDone(it);
-  const badge = `<div class="badge ${done?'done':''}">${done ? ICON.check : n + (target ? '/'+target : '')}</div>`;
+  const badgeTxt = (workDone(it) && dropsLeft(it)>0) ? '降'+dropCount(it)+'/'+plannedDrops(it) : n + (target ? '/'+target : '');
+  const badge = `<div class="badge ${done?'done':''}" ${badgeTxt.length>3?'style="font-size:11px"':''}>${done ? ICON.check : badgeTxt}</div>`;
   const plan = planText(it.plan);
   if (i !== view.active){
     const line = it.todaySets.length ? summary(it.todaySets, t)
@@ -686,13 +714,21 @@ function exBlock(it, i){
   });
   const showEd = !!form.editId || !done || form.more || !target;
   const remain = Math.max(0, target - n);
-  const curWork = showEd && !form.editId && form.setType!=='下降組';
+  const dLeft = dropsLeft(it);
+  const formDrop = form.setType==='下降組';
+  const curWork = showEd && !form.editId && !formDrop;
   for (let k=0; k<remain; k++){
     const cur = k===0 && curWork;
     rows.push(`<div class="srow plan ${cur?'cur':''}"><span class="no">#${n+k+1}</span><span class="prev">${prevTxt(lastW[n+k])}</span>
       <span class="now" ${cur?'id="curnow"':''}>${cur ? esc(setText({...form,_type:t})) : ''}</span><span class="st"></span></div>`);
   }
-  if (showEd && !form.editId && (form.setType==='下降組' || (curWork && remain===0))){
+  // 菜單排好的下降組：還沒做的也先列出來
+  for (let k=0; k<dLeft; k++){
+    const cur = k===0 && showEd && !form.editId && formDrop;
+    rows.push(`<div class="srow plan drop ${cur?'cur':''}"><span class="no">降</span><span class="prev">${prevTxt(lastD[di+k])}</span>
+      <span class="now" ${cur?'id="curnow"':''}>${cur ? esc(setText({...form,_type:t})) : ''}</span><span class="st"></span></div>`);
+  }
+  if (showEd && !form.editId && ((formDrop && dLeft===0) || (curWork && remain===0))){
     const drop = form.setType==='下降組';
     rows.push(`<div class="srow plan cur ${drop?'drop':''}"><span class="no">${drop?'降':'#'+(n+1)}</span>
       <span class="prev">${prevTxt(drop ? lastD[di] : lastW[n])}</span><span class="now" id="curnow">${esc(setText({...form,_type:t}))}</span><span class="st"></span></div>`);
@@ -737,7 +773,8 @@ function editorHTML(it, n){
     inputs = `<div class="cgrid">${c('z2min','時間（分）')}${c('z2km','距離 km')}${c('z2inc','坡度 %')}</div>`;
   }
   const label = editing ? '更新這一組' : isCardio(t) ? '記錄' : t==='計時型' ? `完成第 ${n+1} 組`
-    : f.setType==='下降組' ? '完成下降組' : `完成第 ${n+1} 組`;
+    : f.setType==='下降組' ? (dropsLeft(it)>0 ? `完成下降組 ${dropCount(it)+1}/${plannedDrops(it)}` : '完成下降組') : `完成第 ${n+1} 組`;
+  const skipBtn = !editing && f.setType==='下降組' && dropsLeft(it)>0 && workDone(it);
   const noteOpen = !!f.note || f.noteOpen;
   return `<div class="ed">
     ${editing ? '<div class="editbar"><span>修改這一組</span><button id="cancelEdit">取消</button></div>' : ''}
@@ -746,6 +783,7 @@ function editorHTML(it, n){
     <input id="note" class="textin ${noteOpen?'':'hidden'}" value="${esc(f.note||'')}" placeholder="備註（選填）">
     <button class="big" id="log">${label}</button>
     ${editing ? '<button class="ghost danger" id="del">刪除這一組</button>'
+      : skipBtn ? '<button class="ghost" id="skipDrops">略過下降組 ›</button>'
       : (form.more || (isDone(it) && form.setType==='下降組')) ? `<button class="ghost" id="nextEx">完成這個動作 ›</button>` : ''}
   </div>`;
 }
@@ -808,7 +846,7 @@ function bindDay(){
     if (i<0){ d.items.push({ex:ex.name, type:ex.type, plan:null, last:[], prev2:[], todaySets:[], lastDate:null, suggestion:null}); i=d.items.length-1; LS.set('cache', cache); }
     activate(i);
   });
-  $('#finish') && ($('#finish').onclick = openFinish);
+  $('#end') && ($('#end').onclick = openFinish);
   const it = activeItem(); if (!it) return;
 
   app.querySelectorAll('[data-edit]').forEach(r => r.onclick = () => {
@@ -823,7 +861,7 @@ function bindDay(){
     if (form.editId){ form.setType = v; if (v==='下降組') form.rir = 0; renderDay(); return; }
     const keep = form.note;
     if (v==='下降組') stopRest();
-    form = {...prefill(it, v), ex:it.ex, editId:null, note:keep, more: v==='下降組' || isDone(it)}; renderDay();
+    form = {...prefill(it, v), ex:it.ex, editId:null, note:keep, more: (v==='下降組' && dropsLeft(it)===0) || isDone(it)}; renderDay();
   });
   $('#rir') && $('#rir').querySelectorAll('button').forEach(b => b.onclick = () => {
     readInputs();
@@ -833,8 +871,13 @@ function bindDay(){
   });
   $('#notebtn') && ($('#notebtn').onclick = () => { form.noteOpen = true; $('#notebtn').classList.add('hidden'); const n=$('#note'); n.classList.remove('hidden'); n.focus(); });
   $('#log') && ($('#log').onclick = () => { unlockAudio(); readInputs(); submit(it); });
-  $('#cancelEdit') && ($('#cancelEdit').onclick = () => { form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:false}; renderDay(); });
-  $('#del') && ($('#del').onclick = () => { undoSet(it, form.editId); form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:false}; renderDay(); });
+  $('#cancelEdit') && ($('#cancelEdit').onclick = () => { form = defaultForm(it); renderDay(); });
+  $('#del') && ($('#del').onclick = () => { undoSet(it, form.editId); form = defaultForm(it); renderDay(); });
+  $('#skipDrops') && ($('#skipDrops').onclick = () => {
+    for (const k of Object.keys(skips)) if (!k.startsWith(todayStr())) delete skips[k];
+    skips[skipKey(it)] = true; LS.set('skipDrops', skips);
+    form = null; advance();
+  });
   $('#more') && ($('#more').onclick = () => { form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:true}; renderDay(); });
   $('#dropbtn') && ($('#dropbtn').onclick = () => { stopRest(); form = {...prefill(it,'下降組'), ex:it.ex, editId:null, more:true}; renderDay(); });
   $('#nextEx') && ($('#nextEx').onclick = advance);
@@ -844,11 +887,57 @@ function pickExercise(cb){
   const list = meta?.exercises || [];
   const inDay = new Set(dayItems().map(x=>x.ex));
   const sh = sheet(`<div class="sheethead"><b>選擇動作</b><button class="iconbtn" data-close aria-label="關閉">${ICON.x}</button></div>
+    <button class="ghost" id="newEx" style="margin:4px 0 8px">＋ 新增動作</button>
     ${list.length > 8 ? '<input id="q" class="textin" style="width:100%;margin:6px 0 4px" placeholder="搜尋動作">' : ''}
     <div class="list">${list.map((e,i)=>`<button data-k="${i}" class="${inDay.has(e.name)?'in':''}"><span>${esc(e.name)}</span><span class="small faint">${inDay.has(e.name)?'已在清單':esc(e.type)}</span></button>`).join('') || '<p class="muted">沒有動作清單，請先連線一次。</p>'}</div>`);
   const q = $('#q', sh);
   if (q) q.oninput = () => { const s = q.value.trim().toLowerCase(); sh.querySelectorAll('[data-k]').forEach(b => b.classList.toggle('hidden', !!s && !list[+b.dataset.k].name.toLowerCase().includes(s))); };
   sh.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { sh.remove(); cb(list[+b.dataset.k]); });
+  $('#newEx', sh).onclick = () => { const q0 = q ? q.value.trim() : ''; sh.remove(); openNewExercise(q0, cb); };
+}
+
+/** 新增動作：寫進試算表「動作清單」，並直接加到今天的訓練 */
+function openNewExercise(name0, cb){
+  const muscles = meta?.muscles?.length ? meta.muscles : MUSCLES;
+  const opt = (sel, ph) => `<option value="">${ph}</option>` + muscles.map(m=>`<option ${m===sel?'selected':''}>${esc(m)}</option>`).join('');
+  let type = '重量型';
+  const sh = sheet(`
+    <div class="sheethead"><b>新增動作</b><button class="iconbtn" data-close aria-label="關閉">${ICON.x}</button></div>
+    <div class="label">動作名稱</div>
+    <input id="nxName" class="textin" style="width:100%" value="${esc(name0)}" placeholder="例如 Seated Dip Machine" autocomplete="off">
+    <p class="small faint" style="margin:6px 2px 0">換了器材請建成新動作（不同器材的重量不能互比）。</p>
+    <div class="label">動作類型</div>
+    <div class="seg wrap" id="nxType">${EX_TYPES.map(x=>`<button data-v="${esc(x)}" class="${x===type?'on':''}">${esc(x.replace('有氧-','有氧 '))}</button>`).join('')}</div>
+    <div id="nxMus">
+      <div class="label">主要肌群</div>
+      <select id="nxP" class="sel">${opt('', '請選擇')}</select>
+      <div class="label">協同肌群（選填，各算 0.5 組）</div>
+      <div class="syn">${[1,2,3].map(i=>`<select id="nxS${i}" class="sel">${opt('', '協同肌群 '+i)}</select>`).join('')}</div>
+    </div>
+    <button class="big" id="nxSave">建立並加入</button>`);
+  const nameIn = $('#nxName', sh);
+  sh.querySelectorAll('#nxType button').forEach(b => b.onclick = () => {
+    type = b.dataset.v;
+    sh.querySelectorAll('#nxType button').forEach(x=>x.classList.toggle('on', x===b));
+    $('#nxMus', sh).classList.toggle('hidden', isCardio(type));
+  });
+  $('#nxSave', sh).onclick = () => {
+    const name = nameIn.value.trim().replace(/\s+/g, ' ');
+    if (!name){ toast('請輸入動作名稱'); return; }
+    const list = meta?.exercises || [];
+    const dup = list.find(e => e.name.toLowerCase() === name.toLowerCase());
+    if (dup){ toast('已經有「'+dup.name+'」，直接加入'); sh.remove(); cb(dup); return; }
+    if (list.length >= 50){ toast('動作清單已滿 50 個'); return; }
+    const primary = isCardio(type) ? '' : $('#nxP', sh).value;
+    if (!isCardio(type) && !primary){ toast('請選主要肌群'); return; }
+    const synergists = isCardio(type) ? [] : [1,2,3].map(i=>$('#nxS'+i, sh).value).filter((m,i,a)=>m && m!==primary && a.indexOf(m)===i);
+    // 先排進佇列：佇列依序送出，這個動作一定比它的第一組先寫進試算表
+    enqueue({action:'addExercise', name, type, primary, synergists});
+    const ex = {name, type};
+    meta = {...(meta||{}), exercises:[...list, ex]}; LS.set('meta', meta);
+    haptic(); toast('已新增 '+name); sh.remove(); cb(ex);
+  };
+  setTimeout(()=>nameIn.focus(), 300);
 }
 
 /* ─────────── 記錄 ─────────── */
@@ -886,7 +975,7 @@ function submit(it){
     if (queued){ Object.assign(queued, p); LS.set('queue', queue); flush(); }
     else enqueue({action:'update', ...p});
     LS.set('cache', cache); haptic(); toast('已更新');
-    form = {...prefill(it,'正式'), ex:it.ex, editId:null, more:false}; renderDay(); return;
+    form = defaultForm(it); renderDay(); return;
   }
   const wasDone = isDone(it);
   p.setNo = nextSetNo(it, p.setType); p.set_id = uuid(); p.source = 'pwa';
@@ -911,13 +1000,18 @@ function submit(it){
   if (pr) toast('🏆 新紀錄　e1RM ' + fmt(local.e1rm) + ' kg');
 
   // 下一組的預填
-  if (p.setType==='下降組') form = {...prefill(it,'下降組'), ex:it.ex, editId:null, more:true};
+  const planned = plannedDrops(it) > 0;
+  const dropsNext = workDone(it) && dropsLeft(it) > 0;   // 菜單排的下降組還沒做完：接著做、不休息
+  if (dropsNext) form = {...prefill(it,'下降組'), ex:it.ex, editId:null, more:false};
+  else if (p.setType==='下降組' && !planned) form = {...prefill(it,'下降組'), ex:it.ex, editId:null, more:true};
   else form = {...prefill(it,'正式'), ex:it.ex, editId:null, more: wasDone};
   renderDay(); justLogged = null;
-  if (!isCardio(it.type) && p.setType!=='下降組') startRest();
+  if (dropsNext) stopRest();
+  else if (!isCardio(it.type) && p.setType!=='下降組') startRest();
 
-  // 剛好做完目標組數：沒有下降組習慣的動作自動跳到下一個
-  if (!wasDone && isDone(it) && p.setType==='正式' && !dropRel(it) && nextOpenIdx(view.active) >= 0){
+  // 剛好做完這個動作：沒有下降組習慣、或菜單排的下降組也做完了，就自動跳到下一個
+  const autoNext = (p.setType==='正式' && !dropRel(it)) || planned;
+  if (!wasDone && isDone(it) && autoNext && nextOpenIdx(view.active) >= 0){
     const here = view.active;
     setTimeout(() => { if (view.name==='day' && view.active===here && !form?.editId) advance(); }, 650);
   }
@@ -944,6 +1038,13 @@ function openFinish(){
   const s = sessions[key];
   const mins = s ? Math.max(1, Math.round((s.last - s.start)/60000)) : null;
   const prs = wItems.filter(it => it.best > 0 && Math.max(...it.todaySets.map(x => Number(x.e1rm) || e1rmOf(x.kg, x.reps, x.rir))) > it.best);
+  // 提早結束：列出菜單上還沒做完的動作
+  const notDone = dayItems().filter(it => targetOf(it) > 0 && !isDone(it));
+  const ndTxt = notDone.map(it => {
+    const n = workCount(it), t = targetOf(it);
+    if (n >= t) return it.ex + '（下降組 ' + dropCount(it) + '/' + plannedDrops(it) + '）';
+    return it.ex + (n ? '（' + n + '/' + t + '）' : '');
+  }).join('、');
   const sh = sheet(`
     <div class="sheethead"><b>${esc(view.day)}・${shortDate(todayStr())}</b><button class="iconbtn" data-close aria-label="關閉">${ICON.x}</button></div>
     <div class="stats">
@@ -952,9 +1053,10 @@ function openFinish(){
       <div class="stat"><b>${v ? Math.round(v).toLocaleString() : '—'}</b><span class="small">總量 kg${diff!==null ? ` <span class="${diff>=0?'up':'down'}">${diff>=0?'+':''}${diff}%</span>`:''}</span></div>
     </div>
     ${prs.map(it => `<div class="pr">🏆 ${esc(it.ex)} 破 e1RM 紀錄</div>`).join('')}
+    ${notDone.length ? `<div class="skipped"><b>還有 ${notDone.length} 個動作沒做完</b>${esc(ndTxt)}<br><span class="faint">按「結束訓練」就提早結束；沒做的動作不會寫入試算表。</span></div>` : ''}
     <div class="sumlist">${items.map(it => `<div><span>${esc(it.ex)}</span><span>${esc(summary(it.todaySets, it.type))}</span></div>`).join('') || '<p class="muted">今天還沒有記錄。</p>'}</div>
     <p class="small faint">時間＝第一組到最後一組；總量只算重量型動作${diff!==null?'，和上次同一天的菜單比較':''}。</p>
-    <button class="big" id="done">完成</button>
+    <button class="big" id="done">${notDone.length ? '結束訓練' : '完成'}</button>
     <button class="ghost" data-close>繼續練</button>`);
   haptic();
   $('#done', sh).onclick = () => {
